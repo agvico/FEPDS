@@ -80,4 +80,6 @@ For running the algorithm using the parameters file *params.txt* with the class 
 java -jar FEPDS-1.0.jar params.txt -1
 ```
 
+## Study
 
+To execute the experimental carried out in the paper, please check the release and download it. Then, decompress the study.tar.xz file and execute the _studyReplication.sh_ script.
