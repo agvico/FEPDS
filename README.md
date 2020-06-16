@@ -2,7 +2,7 @@
 
 In this repository the source code of the FEPDS algorithm is presented. Please cite this work as:
 
-*citation not available yet*
+*FEPDS: A Proposal for the Extraction of Fuzzy Emerging Patterns in Data Streams, García-Vico, A.M., Carmona C. J., González P., Seker H., and del Jesus M. J. , IEEE Transactions on Fuzzy Systems, p.1-12, (In Press)*
 
 ## Compile
 
