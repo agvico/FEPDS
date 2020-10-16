@@ -1,16 +1,16 @@
-# FEPDS: A Proposal for the Extraction of Fuzzy Emerging Patterns in Data Streams
+# Evolutionary Fuzzy Emerging Patterns Extraction for Massive Data Streams
 
-In this repository the source code of the FEPDS algorithm is presented. Please cite this work as:
+In this repository, the source code of the FEPMDS algorithm is stored. Please, cite this work as:
 
-*FEPDS: A Proposal for the Extraction of Fuzzy Emerging Patterns in Data Streams, García-Vico, A.M., Carmona C. J., González P., Seker H., and del Jesus M. J. , IEEE Transactions on Fuzzy Systems, p.1-12, (In Press)*
-
+*citation not available yet*
 ## Compile
 
-Maven is employed in this project for a better management of dependencies. Assuming maven is already installed on your system, for compiling the program just execute the following commands in a terminal:
+SBT is employed in this project for a better management of dependencies. We also use the sbt-assembly plugin for the generation of a fat-jar that produces a single jar file that contains all the necessary dependencies. Assuming sbt is already installed on your system, for compiling the program just execute the following commands in a terminal:
 
 ```
-mvn clean
-mvn package
+sbt clean
+sbt compile
+sbt assembly
 ```
 The final generated .jar file is under the /target directory.
 
@@ -20,66 +20,57 @@ Data must follow the ARFF dataset format (https://www.cs.waikato.ac.nz/~ml/weka/
 
 ## Parameters
 
-The algorithm uses several parameters for its execution. All of them must be provided by means of a parameters file. An example of a fully functional parameters file is provided in this repository (param.txt). In addition, an example of a parameters file and brief details of the parameters are presented below:
+Parameters of the FEPMDS algorithm are introduced following a Linux-CLI style. For the complete list of commands, run the method with the *-h* option. The complete list of parameters are summarised below:
 
 ```
-# THIS IS A PARAMETER FILE FOR THE STREAM-MOEA ALGORITHM
-#This a comment. Comments starts with a '#' sign.
-algorithm = stream-moea
-
-# The input data, it must be a stream stored in an arff file.
-inputData = taxis.arff
-
-# The paths of the results files, separated by whitespaces, in this order: training QMs, test QMs for each rule, test QMs summary and rules.
-outputData = taxis_tra_qua.txt    taxis_tst_qua.txt     taxis_quaSumm.txt     taxis_rules.txt
-
-# The number of collected instances before starting the genetic algorithm.
-period = 2500
-
-# Parameters of the genetic algorithm
-seed = 1
-RulesRepresentation = dnf
-nLabels = 7
-nGen = 70
-popLength = 50
-crossProb = 0.8
-mutProb = 0.1
-
-
-# Use this to set the evaluator: "byObjectives" uses presence and objective values in previous timestamps. Other value use only presence in previous steps.
-# Use: "byDiversity" to apply the evaluator based in the application of the decay factor on the diversity measure
-Evaluator = byDiversity
-
-# The size of the sliding window to be used by the evaluator.
-SlidingWindowSize = 5
-
-# The objectives to be used in the genetic algorithm.
-# They must match with the name of the class that represent the quality measure
-Obj1 = WRAccNorm
-Obj2 = SuppDiff
-Obj3 = NULL
-
-# The diversity measure to be used. Useful for process like Token Competition.
-diversity = WRAccNorm
-
-# The different filter applied at the end of the evolutionary process. It will be applied in 
-# order, i.e., the first one is applied over the result, then the second is applied over the result extra-dnf-7-2500cted from the first one and so on.
-filter = TokenCompetition
+Usage: <main class> [-BhSv] [--kafkabroker=NAME] [--maxSamples=Number]
+                    [--time=SECONDS] [-c=<CROSSOVER_PROBABILITY>] [-C=VALUE]
+                    [-e=VALUE] [-l=NUMBER] [-m=<MUTATION_PROBABILITY>]
+                    [-n=PARTITIONS] [-p=VALUE] [-Q=SIZE] [-r=PATH] [-t=PATH]
+                    [-T=PATH] [--topics=NAME(S)]... [-o=NAME(S)[,NAME
+                    (S)...]]... trainingFile testFile
+      trainingFile          The training file in ARFF format.
+      testFile              The test file in ARFF format.
+      --kafkabroker=NAME    The host an port of the kafka broker being used
+      --maxSamples=Number   The maximum number of samples to process before stop the
+                              process
+      --time=SECONDS        Data collect time (in milliseconds) for the Spark
+                              Streaming engine
+      --topics=NAME(S)      A comma-separated list of kafka topics to be employed
+  -B                        Big Data processing using Spark
+  -c, --crossover=<CROSSOVER_PROBABILITY>
+                            The crossover probability. By default is 0.6
+  -C=VALUE                  Chunk size for non-big data streaming processing
+  -e=VALUE                  Maximum number of evaluations
+  -h, --help                Show this help message and exit.
+  -l, --labels=NUMBER       The number of fuzzy linguistic labels for each variable.
+  -m, --mutation=<MUTATION_PROBABILITY>
+                            The mutation probability. By default is 0.1
+  -n=PARTITIONS             The number of partitions employed for Big Data
+  -o, --objectives=NAME(S)[,NAME(S)...]
+                            A comma-separated list of quality measures to be used as
+                              objectives
+  -p=VALUE                  Population Size
+  -Q=SIZE                   The size of the FIFO queue of FEPDS
+  -r, --rules=PATH          The path for storing the rules file.
+  -S                        Streaming processing
+  -t, --training=PATH       The path for storing the training results file.
+  -T, --test=PATH           The path for storing the test results file.
+  -v                        Show INFO messages.
 ```
+
 
 ## Execution
 
-The JVM must be installed on your system. For running the algorithm, two arguments must be passed to the algorithm:
+The execution of the method using Apache Kafka and Apache Spark Streaming is performed by means of setting the *-B* and *-S* flags. In addition, the training file will contain only the ARFF header file. No test file should be provided as the methods follows a test-then-train approache. Threfore, test file must be *null*. 
 
-1. The path of the parameters file.
-2. A number indicating the column of the class variable. A value of -1 means the last column.
-
-For running the algorithm using the parameters file *params.txt* with the class variable as the last one, just type the following command:
-
+The most bases execution of FEPMDS under a Spark Standalone  cluster is as follows:
 ```
-java -jar FEPDS-1.0.jar params.txt -1
+spark-submit --master $MASTER_URL FEPMDS.jar -BS headerFile.arff null
 ```
 
+This will execute the algorithm with the default parameters, waiting for the reception of data on the Kafka topic called *test*.
 ## Study
 
-To execute the experimental carried out in the paper, please check the release and download it. Then, decompress the study.tar.xz file and execute the _studyReplication.sh_ script.
+
+~~To execute the experimental carried out in the paper, please check the release and download it. Then, decompress the study.tar.xz file and execute the _studyReplication.sh_ script.~~
