@@ -26,10 +26,10 @@ libraryDependencies ++= Seq(
   "nz.ac.waikato.cms.moa" % "moa" % "2019.05.0",
 
   // Spark
-  "org.apache.spark" %% "spark-core" % sparkVersion,// % "provided",
-  "org.apache.spark" %% "spark-sql" % sparkVersion ,//% ,"provided",
-  "org.apache.spark" %% "spark-streaming" % sparkVersion, // % "provided",
-  "org.apache.spark" %% "spark-streaming-kafka-0-10" % sparkVersion, // % "provided",
+  "org.apache.spark" %% "spark-core" % sparkVersion % "provided",
+  "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
+  "org.apache.spark" %% "spark-streaming" % sparkVersion % "provided",
+  "org.apache.spark" %% "spark-streaming-kafka-0-10" % sparkVersion % "provided",
 
   "org.apache.commons" % "commons-math3" % "3.2"
 
