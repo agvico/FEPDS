@@ -25,7 +25,7 @@ package utils;
 
 import java.io.*;
 
-
+// TODO: Get rid of this class (Work on ResultWriter)
 public class Files{
 /**
  * <p>

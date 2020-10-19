@@ -5,56 +5,50 @@ import java.util.Comparator
 
 import attributes.Coverage
 import org.uma.jmetal.algorithm.multiobjective.nsgaii.NSGAII
+import org.uma.jmetal.operator.impl.selection.BinaryTournamentSelection
 import org.uma.jmetal.operator.{CrossoverOperator, MutationOperator, SelectionOperator}
 import org.uma.jmetal.solution.BinarySolution
-import org.uma.jmetal.util.archive.impl.NonDominatedSolutionListArchive
-import org.uma.jmetal.util.comparator.DominanceComparator
+import org.uma.jmetal.util.comparator.{DominanceComparator, RankingAndCrowdingDistanceComparator}
 import org.uma.jmetal.util.solutionattribute.impl.{CrowdingDistance, DominanceRanking}
 import org.uma.jmetal.util.{JMetalLogger, SolutionListUtils}
 import problem.attributes.Clase
-import problem.conceptdrift.MeasureBasedDriftDetector
+import problem.conceptdrift.{DriftDetector, NoDriftDetection}
 import problem.evaluator.{EPMEvaluator, EPMStreamingEvaluator}
-import problem.filters.{CoverageRatioFilter, Filter, TokenCompetitionFilter}
+import problem.filters.{Filter, TokenCompetitionFilter}
 import problem.qualitymeasures.QualityMeasure
-import problem.{EPMSparkStreamingProblem, EPMStreamingAlgorithm, EPMStreamingProblem}
+import problem.{EPMStreamingAlgorithm, EPMStreamingProblem}
 import utils.{BitSet, ResultWriter}
 
 import scala.collection.JavaConverters._
 
 
 /**
-  * Class that represents the FEPDS-Spark algorithm.
+  * Class that represents the FEPDS algorithm proposed in
+ *
+ * '''FEPDS: A Proposal for the Extraction of Fuzzy Emerging Patterns in Data Streams,
+ * García-Vico, A.M., Carmona C. J., González P., Seker H., and del Jesus M. J. ,
+ * IEEE Transactions on Fuzzy Systems, p.1-12, (In Press).'''
   *
   * @param problem                 An instance of EPMStreamingProblem
   * @param maxEvaluations          The maximium number of evaluation to perfom on the genetic algorithm
   * @param populationSize          The population size
-  * @param matingPoolSize          The mating pool size (usually equal to population size)
-  * @param offspringPopulationSize The offspring population size (usually equal to population size)
   * @param crossoverOperator       The crossover operator to employ
   * @param mutationOperator        The mutation operator to employ
   * @param selectionOperator       The selection operator to employ
   * @param dominanceComparator     The dominance comparator to employ
   * @param evaluator               The evaluator use for computing the quality of the individuals
+ *  @param filters                 The post-processing filters to be applied after the execution of the EA (by default, only Token Competition)
   */
 class FEPDS(problem: EPMStreamingProblem,
-             maxEvaluations: Int,
-             populationSize: Int,
-             matingPoolSize: Int,
-             offspringPopulationSize: Int,
-             crossoverOperator: CrossoverOperator[BinarySolution],
-             mutationOperator: MutationOperator[BinarySolution],
-             selectionOperator: SelectionOperator[util.List[BinarySolution], BinarySolution],
-             dominanceComparator: Comparator[BinarySolution],
-             evaluator: EPMStreamingEvaluator) // TODO: Hacer que este atributo sea un EPMEvaluator y use el Streaming si se indica en tiempo de ejecucion
-/*extends NSGAIII[BinarySolution](
-  new NSGAIIIBuilder[BinarySolution](problem)
-    .setMaxIterations(maxEvaluations)
-    .setPopulationSize(populationSize)
-    .setCrossoverOperator(crossoverOperator)
-    .setMutationOperator(mutationOperator)
-    .setSelectionOperator(selectionOperator)
-    .setSolutionListEvaluator(evaluator)
-)*/
+                 maxEvaluations: Int = 10000,
+                 populationSize: Int = 50,
+                 crossoverOperator: CrossoverOperator[BinarySolution],
+                 mutationOperator: MutationOperator[BinarySolution],
+                 selectionOperator: SelectionOperator[util.List[BinarySolution], BinarySolution] = new BinaryTournamentSelection[BinarySolution](new RankingAndCrowdingDistanceComparator[BinarySolution]),
+                 dominanceComparator: Comparator[BinarySolution] = new DominanceComparator[BinarySolution]().reversed(),
+                 evaluator: EPMStreamingEvaluator,
+                 filters: Seq[Filter[BinarySolution]] = List(new TokenCompetitionFilter[BinarySolution])
+              )
   extends NSGAII[BinarySolution](problem,
     maxEvaluations,
     populationSize,
@@ -68,14 +62,15 @@ class FEPDS(problem: EPMStreamingProblem,
     with EPMStreamingAlgorithm with Serializable {
 
 
+  /** The drift detection method */
+  val driftDetector: DriftDetector = new NoDriftDetection(problem)
+
   /**
     * ELEMENTS OF THE GENETIC ALGORITHM
     */
 
   /** The elite population, where the best patterns found so far are stored */
   private var elite: util.List[BinarySolution] = new util.ArrayList[BinarySolution]()
-  /** The post-processing filters to be applied after the execution of the EA */
-  private val filters: Seq[Filter[BinarySolution]] = List(new TokenCompetitionFilter[BinarySolution])
 
   /** A bit set which marks the instances covered on the previous generations. This is for checking the re-init criteria */
   private var previousCoverage: BitSet = new BitSet(1)
@@ -162,61 +157,6 @@ class FEPDS(problem: EPMStreamingProblem,
     }
   }
 
-  /*override def updateProgress(): Unit = {
-      //super.updateProgress()  // ONLY NSGA-II
-      iterations += maxPopulationSize
-
-      JMetalLogger.logger.finest("Evaluations: " + iterations)
-
-      // Check reinitialisation
-      if (checkReinitialisationCriterion(getPopulation, this.previousCoverage, lastChange, REINIT_PCT)) {
-        JMetalLogger.logger.fine("Reinitialisation at evaluation " + iterations + " out of " + maxEvaluations)
-        population = coverageBasedInitialisation(population, evaluator.classes(CURRENT_CLASS))
-
-        // evaluate the new generated population to avoid errors
-        evaluator.evaluate(population, problem)
-      }
-
-    }*/
-
-  /*
-    * Overriding replacement of NSGA-III in order to use the fixed version of the ENVIRONMENTAL SELECTION.
-    * REMOVE IF NOT USING NSGA_III !!
-    *
-    * @param population
-    * @param offspringPopulation
-    * @return
-    */
-  /*override def replacement(population: util.List[BinarySolution], offspringPopulation: util.List[BinarySolution]): util.List[BinarySolution] = {
-    val jointPopulation = new util.ArrayList[BinarySolution]
-    jointPopulation.addAll(population)
-    jointPopulation.addAll(offspringPopulation)
-
-    val ranking = computeRanking(jointPopulation)
-
-    //List<Solution> pop = crowdingDistanceSelection(ranking);
-    val crowd: CrowdingDistance[BinarySolution] = new CrowdingDistance[BinarySolution]
-    var pop: util.List[BinarySolution] = new util.ArrayList[BinarySolution]
-    val fronts = new util.ArrayList[util.List[BinarySolution]]
-    var rankingIndex = 0
-    var candidateSolutions = 0
-    while (candidateSolutions < getMaxPopulationSize) {
-      crowd.computeDensityEstimator(ranking.getSubfront(rankingIndex))
-      fronts.add(ranking.getSubfront(rankingIndex))
-      candidateSolutions += ranking.getSubfront(rankingIndex).size
-      if ((pop.size + ranking.getSubfront(rankingIndex).size) <= getMaxPopulationSize) addRankedSolutionsToPopulation(ranking, rankingIndex, pop)
-      rankingIndex += 1
-    }
-
-    // A copy of the reference list should be used as parameter of the environmental selection
-    val selection = new EnvironmentalSelectionFix[BinarySolution](fronts, getMaxPopulationSize, getReferencePointsCopy, getProblem.getNumberOfObjectives)
-
-
-    pop = selection.execute(pop)
-
-    return pop
-  }*/
-
   /**
     * The result is the elite population
     *
@@ -229,7 +169,7 @@ class FEPDS(problem: EPMStreamingProblem,
     * It starts the learning procedure for the extraction of a new pattern set model
     */
   def startLearningProcess(classesToRun: Seq[Int]): Unit = {
-    JMetalLogger.logger.fine("Starting FEPDS-Spark execution.")
+    JMetalLogger.logger.fine("Starting " + getName + " execution.")
     elite = new util.ArrayList[BinarySolution]()
 
     classesToRun.foreach(clas => {
@@ -265,7 +205,7 @@ class FEPDS(problem: EPMStreamingProblem,
     // At the end, replace the previous results with this one
     this.problem.replacePreviousResults(elite.asScala, classesToRun)
     //println("-------------------------")
-    JMetalLogger.logger.fine("Finished FEPDS execution.")
+    JMetalLogger.logger.fine("Finished " + getName + " execution.")
 
   }
 
@@ -273,19 +213,16 @@ class FEPDS(problem: EPMStreamingProblem,
 
 
   override def run(): Unit = {
-    // ONLY FOR NSGA-III AS THE IMPLEMENTATION OF JMETAL MINIMISES !!
     TIMESTAMP += 1
-    //println("----------------------\nRunning timestamp: " + TIMESTAMP)
 
-    val toRun = evaluator.classes // Get the classes with examples in this batch:
-      .map(_.cardinality() > 0) // Check if there is examples for the class
-      .zipWithIndex // Get the index of the class to be executed
-      .filter(_._1) // Get only the elements with TRUE values
-      .map(_._2) // Get the integer of the class
+    val toRun = evaluator.classes   // Get the classes with examples in this batch:
+      .map(_.cardinality() > 0)     // Check if there is examples for the class
+      .zipWithIndex                 // Get the index of the class to be executed
+      .filter(_._1)                 // Get only the elements with TRUE values
+      .map(_._2)                    // Get the integer of the class
 
     // TEST-THEN-TRAIN. First, test the results
     val model = problem.getPreviousResultsStreaming().asJava
-    //var doTraining = true
 
     if (!model.isEmpty) {
       QualityMeasure.setMeasuresReversed(false) // For test, get the normal values.
@@ -302,35 +239,18 @@ class FEPDS(problem: EPMStreamingProblem,
         writer.writeStreamingResults(TIMESTAMP, getExecutionTime(), getMemory())
       }
     }
-      // Check if average confidence  for each class is below the threshold
-      // This is performed because we only want to execute on those classes below the threshold and not in the other ones.
-      //val toExecRealDrift = realDriftDetector.detect(filteredModel.asScala).toSeq
-      //val toExecVirtualDrift = virtualDriftDetector.detect(filteredModel.asScala).toSeq
 
-      //val toExec: Seq[Int] = (toExecVirtualDrift union toExecRealDrift) distinct
-
-
-      /*if (toExec.nonEmpty) {
-        JMetalLogger.logger.info("DRIFT DETECTECT!! : From Real Drift: " + toExecRealDrift + "  -   From Virtual Drift: " + toExecVirtualDrift)
-        toRun = toExec.toSeq
-        doTraining = true
-      } else {
-        JMetalLogger.logger.info("Above threshold. SKIPPING TRAINING.")
-        doTraining = false
-      }
-    }*/
-
-      //if (doTraining) {
-      //QualityMeasure.setMeasuresReversed(false)
-      //problem.setAttributes(problem.generateAttributes())
-
+    // AFTER TEST, TRAIN
     // Generate fuzzy sets definitions only once.
       if(TIMESTAMP <= 1) {
         JMetalLogger.logger.info("Generating the Fuzzy Sets Definitions at timestamp " + TIMESTAMP)
         problem.generateFuzzySets()
       }
 
-      startLearningProcess(toRun) // Always start the learning process on each batch
+    // Drift detection and train if necessary
+    val cl: Seq[Int] = driftDetector.detect(model.asScala, toRun).toSeq
+    if(cl.nonEmpty)
+      startLearningProcess(cl) // In FEPDS, always start the learning process on each batch
 
   }
 
@@ -373,38 +293,6 @@ class FEPDS(problem: EPMStreamingProblem,
       return (evaluations - lastChange) >= evalsToReinit
     }
   }
-
-
-  /*def checkReinitialisationCriterion(population: util.List[BinarySolution], previousCoverage: BitSet, lastChange: Int, percentage: Float): Boolean = {
-
-    // Get the current coverage of the whole population
-    val currentCoverage: BitSet = population.asScala.map(ind => ind.getAttribute(classOf[Coverage[BinarySolution]]).asInstanceOf[BitSet]).reduce(_ | _)
-
-    if (previousCoverage == null) {
-      this.previousCoverage = currentCoverage
-      this.lastChange = iterations
-      return false
-    }
-
-    if (previousCoverage.cardinality() == 0 && currentCoverage.cardinality() != 0) {
-      this.previousCoverage = currentCoverage
-      this.lastChange = iterations
-      return false
-    }
-    // Calculate if there are new covered examples not previously covered
-    val newCovered: BitSet = (previousCoverage ^ currentCoverage) & (~previousCoverage)
-
-    if (newCovered.cardinality() > 0) {
-      JMetalLogger.logger.finer("New examples covered at evaluation: " + iterations)
-      this.previousCoverage = currentCoverage
-      this.lastChange = iterations
-      return false
-    } else {
-      val evalsToReinit = (maxEvaluations * percentage).toInt
-      return (iterations - lastChange) >= evalsToReinit
-    }
-
-  }*/
 
 
   /**
@@ -459,19 +347,4 @@ class FEPDS(problem: EPMStreamingProblem,
 
   }
 }
-
-/**
-  * Overrided method from NSGAIII
-  *
-  * @return
-  */
-/*private def getReferencePointsCopy: util.List[ReferencePoint[BinarySolution]] = {
-  val copy = new util.ArrayList[ReferencePoint[BinarySolution]]
-  import scala.collection.JavaConversions._
-  for (r <- this.referencePoints) {
-    copy.add(new ReferencePoint[BinarySolution](r))
-  }
-  copy
-}*/
-
 

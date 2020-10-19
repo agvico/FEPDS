@@ -16,7 +16,7 @@ object Fuzzy {
    * @param numLabels
    * @return
    */
-  def generateTriangularLinguisticLabels(min: Double, max: Double, numLabels: Int): ArrayBuffer[MembershipFunction] = {
+  def generateTriangularLinguisticLabels(min: Double, max: Double, numLabels: Int): Seq[MembershipFunction] = {
     val marca = (max - min) / (numLabels - 1).toDouble
     var cutPoint = min + marca / 2
     val variables = new ArrayBuffer[MembershipFunction]()
@@ -51,15 +51,15 @@ object Fuzzy {
       cutPoint += marca
     }
 
-    //sets
+    // return an inmutable version of the array
     variables
   }
 
 
-  private  def Round(`val`: Double, tope: Double): Double = {
-    if (`val` > -0.0001 && `val` < 0.0001) return 0
-    if (`val` > tope - 0.0001 && `val` < tope + 0.0001) return tope
-    `val`
+  private  def Round(value: Double, tope: Double): Double = {
+    if (value > -0.0001 && value < 0.0001) return 0
+    if (value > tope - 0.0001 && value < tope + 0.0001) return tope
+    value
   }
 
 }

@@ -2,4 +2,9 @@
 /nbactions.xml
 /*.arff
 /*.txt
+/*.log
+/rules
+/test
+/test_summ
+/tra
 !/param.txt

@@ -2,7 +2,7 @@ import java.util
 import java.util.logging.Level
 
 import com.yahoo.labs.samoa.instances.Instance
-import genetic.{FEPDS, FEPMDSBuilder, FEPMDSCell}
+import genetic.FEPDS
 import genetic.operators.crossover.NPointCrossover
 import genetic.operators.mutation.BiasedMutationDNF
 import moa.streams.ArffFileStream
@@ -19,7 +19,7 @@ import org.uma.jmetal.algorithm.Algorithm
 import org.uma.jmetal.operator.CrossoverOperator
 import org.uma.jmetal.operator.impl.selection.BinaryTournamentSelection
 import org.uma.jmetal.solution.BinarySolution
-import org.uma.jmetal.util.comparator.{DominanceComparator, RankingAndCrowdingDistanceComparator}
+import org.uma.jmetal.util.comparator.RankingAndCrowdingDistanceComparator
 import org.uma.jmetal.util.pseudorandom.JMetalRandom
 import org.uma.jmetal.util.{AlgorithmRunner, JMetalLogger}
 import picocli.CommandLine
@@ -27,7 +27,7 @@ import picocli.CommandLine.{Option, Parameters}
 import problem._
 import problem.evaluator.{EPMEvaluator, EPMStreamingEvaluator}
 import problem.qualitymeasures.QualityMeasure
-import utils.ResultWriter
+import utils.{ResultWriter, Utils}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -37,60 +37,69 @@ import scala.collection.mutable.ArrayBuffer
 
 class Main extends Runnable with Serializable {
 
-@Parameters(index = "0", paramLabel = "trainingFile", description = Array("The training file in ARFF format."))
-var trainingFile: String = _
+  @Parameters(index = "0", paramLabel = "trainingFile", description = Array("The training file in ARFF format."))
+  var trainingFile: String = _
 
-@Parameters(index = "1", paramLabel = "testFile", description = Array("The test file in ARFF format."))
-var testFile: String = _
+  @Parameters(index = "1", paramLabel = "testFile", description = Array("The test file in ARFF format."))
+  var testFile: String = _
 
-@Option(names = Array("-h", "--help"), usageHelp = true, description = Array("Show this help message and exit."))
-var help = false
+  @Option(names = Array("-s", "--seed"), paramLabel = "SEED", description = Array("The seed for the random number generator. Defaults to 1."))
+  var seed: Int = 1
 
-@Option(names = Array("-t", "--training"), paramLabel = "PATH", description = Array("The path for storing the training results file."))
-var resultTraining: String = "tra"
+  @Option(names = Array("-h", "--help"), usageHelp = true, description = Array("Show this help message and exit."))
+  var help = false
 
-@Option(names = Array("-T", "--test"), paramLabel = "PATH", description = Array("The path for storing the test results file."))
-var resultTest: String = "test"
+  @Option(names = Array("-t", "--training"), paramLabel = "PATH", description = Array("The path for storing the training results file."))
+  var resultTraining: String = "tra"
 
-@Option(names = Array("-r", "--rules"), paramLabel = "PATH", description = Array("The path for storing the rules file."))
-var resultRules: String = "rules"
+  @Option(names = Array("-T", "--test"), paramLabel = "PATH", description = Array("The path for storing the test results file."))
+  var resultTest: String = "test"
 
-@Option(names = Array("-l", "--labels"), paramLabel = "NUMBER", description = Array("The number of fuzzy linguistic labels for each variable."))
-var numLabels = 3
+  @Option(names = Array("-r", "--rules"), paramLabel = "PATH", description = Array("The path for storing the rules file."))
+  var resultRules: String = "rules"
 
-@Option(names = Array("-Q"), paramLabel = "SIZE", description = Array("The size of the FIFO queue of FEPDS"))
-var QUEUE_SIZE = 0
+  @Option(names = Array("-l", "--labels"), paramLabel = "NUMBER", description = Array("The number of fuzzy linguistic labels for each variable."))
+  var numLabels = 3
+  require(numLabels >= 2, "At least 2 Linguistic labels must be defined.")
 
-@Option(names = Array("-v"), description = Array("Show INFO messages."))
-var verbose = false
+  @Option(names = Array("-Q"), paramLabel = "SIZE", description = Array("The size of the FIFO queue of FEPDS"))
+  var QUEUE_SIZE = 5
+  require(QUEUE_SIZE >= 0, "Queue size < 0")
 
-@Option(names = Array("-c", "--crossover"), description = Array("The crossover probability. By default is 0.6"))
-var CROSSOVER_PROBABILITY: Double = 0.6
+  @Option(names = Array("-v"), description = Array("Show INFO messages."))
+  var verbose = false
 
-@Option(names = Array("-m", "--mutation"), description = Array("The mutation probability. By default is 0.1"))
-var MUTATION_PROBABILITY: Double = 0.1
+  @Option(names = Array("-c", "--crossover"), description = Array("The crossover probability. By default is 0.6"))
+  var CROSSOVER_PROBABILITY: Double = 0.6
+  require(CROSSOVER_PROBABILITY >= 0 && CROSSOVER_PROBABILITY <= 1.0, "Crossover probability out of bounds: " + CROSSOVER_PROBABILITY)
 
-@Option(names = Array("-B"), description = Array("Big Data processing using Spark"))
-var bigDataProcessing = false
+  @Option(names = Array("-m", "--mutation"), description = Array("The mutation probability. By default is 0.1"))
+  var MUTATION_PROBABILITY: Double = 0.1
+  require(MUTATION_PROBABILITY >= 0 && MUTATION_PROBABILITY <= 1.0, "Mutation probability out of bounds: " + MUTATION_PROBABILITY)
 
-@Option(names = Array("-S"), description = Array("Streaming processing"))
-var streamingProcessing = false
+  @Option(names = Array("-B"), description = Array("Big Data processing using Spark"))
+  var bigDataProcessing = false
 
-@Option(names = Array("-p"), paramLabel = "VALUE", description = Array("Population Size. NOTE: Should be a number equals to the size of a n x n grid, e.g., 49 is for 7x7 grids."))
-var POPULATION_SIZE = 49//50
+  @Option(names = Array("-S"), description = Array("Streaming processing"))
+  var streamingProcessing = true
 
-@Option(names = Array("-e"), paramLabel = "VALUE", description = Array("Maximum number of evaluations"))
-var MAX_EVALUATIONS = 5000
+  @Option(names = Array("-p"), paramLabel = "VALUE", description = Array("Population Size. NOTE: Should be a number equals to the size of a n x n grid, e.g., 49 is for 7x7 grids."))
+  var POPULATION_SIZE = 50
+   require(POPULATION_SIZE % 2 == 0, "Population size must be divisible by 2. Current size: " + POPULATION_SIZE)
 
+  @Option(names = Array("-e"), paramLabel = "VALUE", description = Array("Maximum number of evaluations"))
+  var MAX_EVALUATIONS = 5000
+  require(MAX_EVALUATIONS >= POPULATION_SIZE, "Evalutions < population size. At least one generation must be performed.")
 
-@Option(names = Array("-C"), paramLabel = "VALUE", description = Array("Chunk size for non-big data streaming processing"))
-var CHUNK_SIZE = 5000
+  @Option(names = Array("-C"), paramLabel = "VALUE", description = Array("Chunk size for non-big data streaming processing"))
+  var CHUNK_SIZE = 5000
+  require(CHUNK_SIZE > 1, "Chunk size <= 1.")
 
-@Option(names = Array("--time"), paramLabel = "SECONDS", description = Array("Data collect time (in milliseconds) for the Spark Streaming engine"))
-var COLLECT_TIME: Long = 1000
+  @Option(names = Array("--time"), paramLabel = "SECONDS", description = Array("Data collect time (in milliseconds) for the Spark Streaming engine"))
+  var COLLECT_TIME: Long = 1000
 
-@Option(names = Array("-n"), paramLabel = "PARTITIONS", description = Array("The number of partitions employed for Big Data"))
-var NUM_PARTITIONS = 8
+  @Option(names = Array("-n"), paramLabel = "PARTITIONS", description = Array("The number of partitions employed for Big Data"))
+  var NUM_PARTITIONS = 8
 
 
   @Option(names = Array("--kafkabroker"), paramLabel = "NAME", description = Array("The host an port of the kafka broker being used"))
@@ -98,6 +107,7 @@ var NUM_PARTITIONS = 8
 
   @Option(names = Array("-o", "--objectives"), split=",", paramLabel = "NAME(S)", description = Array("A comma-separated list of quality measures to be used as objectives"))
   var OBJECTIVES = Array("WRAccNorm", "SuppDiff" )
+  require(OBJECTIVES.size >= 2, "Objectives < 2.")
 
   @Option(names = Array("--topics"), paramLabel = "NAME(S)", description = Array("A comma-separated list of kafka topics to be employed"))
   var TOPICS = Array("test") //Lista de topics separados por coma
@@ -118,9 +128,10 @@ var NUM_PARTITIONS = 8
     "enable.auto.commit" -> (false: java.lang.Boolean)
   )
 
-val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a row until considering timeout and finish execution.
+  val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a row until considering timeout and finish execution.
 
   override def run(): Unit = {
+
 
 
     if(help){
@@ -135,7 +146,7 @@ val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a
     }
 
     val rand = JMetalRandom.getInstance()
-    rand.setSeed(1)
+    rand.setSeed(seed)
 
     // The problem
     val problem = new EPMSparkStreamingProblem
@@ -150,47 +161,25 @@ val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a
     val mutationProbability = MUTATION_PROBABILITY
     val mutation = new BiasedMutationDNF(mutationProbability, problem.rand)
 
-    // The evaluator (OBJECTIVES: WRAcc, TPR & Confidence)
+    // The evaluator
     val evaluator = new EPMStreamingEvaluator(QUEUE_SIZE)
     evaluator.setBigDataProcessing(false)
-    val objs: Seq[QualityMeasure] = OBJECTIVES.map(getQualityMeasure)
+    val objs: Seq[QualityMeasure] = OBJECTIVES.map(Utils.getQualityMeasure)
     evaluator.setObjectives(objs)
     problem.setNumberOfObjectives(objs.length)
     //evaluator.setObjectives(Array(new WRAccNorm, new OddsRatio))
 
-    // The method builder
-    /*val fepdsBuilder = new FEPMDSBuilder(problem, crossover.asInstanceOf[CrossoverOperator[BinarySolution]], mutation)
-    fepdsBuilder.setDominanceComparator(new DominanceComparator[BinarySolution]().reversed())
-    fepdsBuilder.setEvaluator(evaluator)
-    fepdsBuilder.setMaxEvaluations(MAX_EVALUATIONS)
-    fepdsBuilder.setPopulationSize(POPULATION_SIZE)
+    // Generate the method
+    val algorithm: FEPDS = new FEPDS(problem,
+                                  maxEvaluations = MAX_EVALUATIONS,
+                                  populationSize = POPULATION_SIZE,
+                                  crossoverOperator = crossover.asInstanceOf[CrossoverOperator[BinarySolution]],
+                                  mutationOperator = mutation,
+                                  evaluator = evaluator
+    )
 
-
-    val fepds = fepdsBuilder.build() */ // The method
-
-    /*val fepds: FEPMDSCell = new FEPMDSCell(problem,
-      0.6,
-      0.1,
-      MAX_EVALUATIONS,
-      POPULATION_SIZE,
-      crossover.asInstanceOf[CrossoverOperator[BinarySolution]],
-      mutation,
-      new BinaryTournamentSelection[BinarySolution](new RankingAndCrowdingDistanceComparator[BinarySolution]),
-      evaluator
-    )*/
-
-    val fepds = new FEPDS(problem,
-    MAX_EVALUATIONS,
-    POPULATION_SIZE,
-    POPULATION_SIZE,
-    POPULATION_SIZE,
-    crossover.asInstanceOf[CrossoverOperator[BinarySolution]],
-    mutation,
-    selection,
-      new DominanceComparator[BinarySolution]().reversed(),
-    evaluator)
-
-    fepds.writer = new ResultWriter(resultTraining,
+    // Create the results writer
+    algorithm.writer = new ResultWriter(resultTraining,
       resultTest,
       resultTest + "_summ",
       resultRules,
@@ -199,21 +188,23 @@ val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a
       evaluator.getObjectives,
       true)
 
+
+    // Execute the method according the selected configuration
     if(!bigDataProcessing){
       if(!streamingProcessing) {
         // Traditional processing
-        traditionalExecution(fepds, problem, evaluator)
+        traditionalExecution(algorithm, problem, evaluator)
       } else {
         // Streaming processing with MOA (non-big data)
-        streamingTraditionalExecution(fepds, problem, evaluator, -1)
+        streamingTraditionalExecution(algorithm, problem, evaluator, -1)
       }
     } else {
       if(!streamingProcessing){
         // Big Data traditional processing
-        bigDataTraditionalExecution(fepds, problem.asInstanceOf[EPMProblem], evaluator, NUM_PARTITIONS)
+        bigDataTraditionalExecution(algorithm, problem.asInstanceOf[EPMProblem], evaluator, NUM_PARTITIONS)
       } else {
         // Spark-Streaming processing
-        sparkStreamingExecution(fepds,problem, evaluator, NUM_PARTITIONS)
+        sparkStreamingExecution(algorithm,problem, evaluator, NUM_PARTITIONS)
       }
     }
 
@@ -299,7 +290,7 @@ val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a
     */
   def bigDataTraditionalExecution(algorithm: Algorithm[util.List[BinarySolution]], problem: EPMProblem, evaluator: EPMEvaluator, numPartitions: Int): Unit ={
     // Set Spark Context
-    val conf: SparkConf = getSparkConfiguration
+    val conf: SparkConf = Utils.getSparkConfiguration
     val spark: SparkSession = SparkSession.builder.config(conf).config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       // use this if you need to increment Kryo buffer size. Default 64k
       .config("spark.kryoserializer.buffer", "1024k")
@@ -358,7 +349,7 @@ val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a
     val header = problem.getData.toString
 
     // Set Spark Context
-    val conf: SparkConf = getSparkConfiguration
+    val conf: SparkConf = Utils.getSparkConfiguration
     conf.setAppName(algorithm.getName)
     //conf.setMaster("local[*]")
     //conf.setJars(Array("antlrworks-1.2.jar"))
@@ -377,6 +368,7 @@ val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a
     // create streaming context which collect data each COLLECT_TIME Milliseconds
     val ssc = new StreamingContext(spark.sparkContext, Milliseconds(COLLECT_TIME))
 
+    // Set Kafka Stream (to collect the data from it)
     var INSTANCES_PROCESSED = 0
     val stream = KafkaUtils.createDirectStream[String, String](
       ssc,
@@ -384,16 +376,18 @@ val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a
       Subscribe[String, String](TOPICS, kafkaParams)
     ).map(record => record.value())
 
-    var firstBatch = true
-    var emptyBatch = 0
-    var totalTime: Long = 0
+    var firstBatch = true       // Is this the first batch we are processing?
+    var emptyBatch = 0          // Number of empty data batches received in a row
+    var totalTime: Long = 0     // total execution time of the method
 
 
     stream.repartition(NUM_PARTITIONS).cache().foreachRDD(rdd => {
       if (!rdd.isEmpty()) {
         emptyBatch = 0
         //println("Processing RDD...")
-        var t_ini = System.currentTimeMillis()
+        val t_ini = System.currentTimeMillis()
+
+        // Run the algorithm
         processRDD(rdd, algorithm, problem, evaluator, numPartitions, firstBatch, header)
         totalTime += (System.currentTimeMillis() - t_ini)
         INSTANCES_PROCESSED += problem.numExamples
@@ -494,57 +488,6 @@ val MAX_EMPTY_BATCHES_TIMEOUT: Int = 10  // Maximum amount of empty batches in a
     algorithm.setMemory(memory)
   }
 
-  /**
-    * It returns the spark configuration
-    * @return
-    */
-  private def getSparkConfiguration: SparkConf = {
-    val conf = new SparkConf()
-    conf.registerKryoClasses(
-      Array(
-        classOf[scala.collection.mutable.WrappedArray.ofRef[_]],
-        classOf[org.apache.spark.sql.types.StructType],
-        classOf[Array[org.apache.spark.sql.types.StructType]],
-        classOf[org.apache.spark.sql.types.StructField],
-        classOf[Array[org.apache.spark.sql.types.StructField]],
-        Class.forName("org.apache.spark.sql.types.StringType$"),
-        Class.forName("org.apache.spark.sql.types.LongType$"),
-        Class.forName("org.apache.spark.sql.types.BooleanType$"),
-        Class.forName("org.apache.spark.sql.types.DoubleType$"),
-        classOf[org.apache.spark.sql.types.Metadata],
-        classOf[org.apache.spark.sql.types.ArrayType],
-        Class.forName("org.apache.spark.sql.execution.joins.UnsafeHashedRelation"),
-        classOf[org.apache.spark.sql.catalyst.InternalRow],
-        classOf[Array[org.apache.spark.sql.catalyst.InternalRow]],
-        classOf[org.apache.spark.sql.catalyst.expressions.UnsafeRow],
-        Class.forName("org.apache.spark.sql.execution.joins.LongHashedRelation"),
-        Class.forName("org.apache.spark.sql.execution.joins.LongToUnsafeRowMap"),
-        classOf[utils.BitSet],
-        classOf[org.apache.spark.sql.types.DataType],
-        classOf[Array[org.apache.spark.sql.types.DataType]],
-        Class.forName("org.apache.spark.sql.types.NullType$"),
-        Class.forName("org.apache.spark.sql.types.IntegerType$"),
-        Class.forName("org.apache.spark.sql.types.TimestampType$"),
-        Class.forName("org.apache.spark.internal.io.FileCommitProtocol$TaskCommitMessage"),
-        Class.forName("scala.collection.immutable.Set$EmptySet$"),
-        Class.forName("java.lang.Class")
-      )
-    )
-  }
-
-  /**
-    * It returns a quality measure class by means of a string name
-    * @param name
-    * @return
-    */
-  def getQualityMeasure(name: String): QualityMeasure = {
-    Class.forName(
-      classOf[QualityMeasure].getPackage.getName +
-        "." +
-        name)
-      .newInstance()
-      .asInstanceOf[QualityMeasure]
-  }
 
 }
 
